@@ -4,7 +4,12 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.wifi.WifiManager
+import android.net.wifi.WifiNetworkSpecifier
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.ContextCompat
@@ -23,7 +28,13 @@ class HotspotHandler(
   private val wifiManager: WifiManager
     get() = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
 
+  private val connectivityManager: ConnectivityManager
+    get() =
+      context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE)
+        as ConnectivityManager
+
   private var reservation: WifiManager.LocalOnlyHotspotReservation? = null
+  private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
   override fun startHost(
     credentials: HotspotCredentials,
@@ -90,10 +101,51 @@ class HotspotHandler(
   override fun joinAsClient(
     credentials: HotspotCredentials,
     callback: (Result<Unit>) -> Unit,
-  ) = callback(notImplemented("HotspotApi.joinAsClient"))
+  ) {
+    // Tear down any prior request before starting a new one.
+    unbind()
 
-  override fun leave(callback: (Result<Unit>) -> Unit) =
-    callback(notImplemented("HotspotApi.leave"))
+    val specifier = WifiNetworkSpecifier.Builder()
+      .setSsid(credentials.ssid)
+      .setWpa2Passphrase(credentials.password)
+      .build()
+    val request = NetworkRequest.Builder()
+      .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+      .setNetworkSpecifier(specifier)
+      .build()
+
+    val cb = object : ConnectivityManager.NetworkCallback() {
+      override fun onAvailable(network: Network) {
+        // Route app sockets over the hotspot, not cellular.
+        connectivityManager.bindProcessToNetwork(network)
+        events.onClientStateChanged(true) {}
+      }
+
+      override fun onLost(network: Network) {
+        connectivityManager.bindProcessToNetwork(null)
+        events.onClientStateChanged(false) {}
+      }
+
+      override fun onUnavailable() {
+        events.onClientStateChanged(false) {}
+      }
+    }
+
+    networkCallback = cb
+    connectivityManager.requestNetwork(request, cb)
+    callback(Result.success(Unit))
+  }
+
+  override fun leave(callback: (Result<Unit>) -> Unit) {
+    unbind()
+    callback(Result.success(Unit))
+  }
+
+  private fun unbind() {
+    networkCallback?.let { connectivityManager.unregisterNetworkCallback(it) }
+    networkCallback = null
+    connectivityManager.bindProcessToNetwork(null)
+  }
 
   private fun hasNearbyWifiPermission(): Boolean {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
