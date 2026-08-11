@@ -39,6 +39,11 @@ dependencies:
   # join (ADR-002). Pinned exact for reproducible builds.
   permission_handler: 11.3.1
 
+  # QR rendering of the standard WiFi payload for iOS system-Camera join
+  # (ADR-002 addendum). Pinned exact. No scanner dep: Android joins by manual
+  # entry at Phase 0, in-app scan lands at Phase 4.
+  qr_flutter: 4.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
