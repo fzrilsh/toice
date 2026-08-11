@@ -29,13 +29,25 @@ class VoiceSession {
   final SessionRole role;
   final RtcPeerFactory _newPeer;
   final _links = <String, PeerLink>{};
+  final _subs = <String, StreamSubscription<VoiceConnectionState>>{};
+  final _changes =
+      StreamController<Map<String, VoiceConnectionState>>.broadcast();
 
   /// Live view of per-peer connection state, keyed by peer id.
   Map<String, VoiceConnectionState> get connections => {
     for (final e in _links.entries) e.key: e.value.state,
   };
 
+  /// Emits the [connections] snapshot whenever any link changes state or a peer
+  /// is added/removed. Drives a reactive UI without polling.
+  Stream<Map<String, VoiceConnectionState>> get connectionChanges =>
+      _changes.stream;
+
   int get peerCount => _links.length;
+
+  void _emitChange() {
+    if (!_changes.isClosed) _changes.add(connections);
+  }
 
   /// Host: register a joining client. [signaling] is the channel to that one
   /// client; the host is the answerer (it waits for the client's offer).
@@ -75,24 +87,37 @@ class VoiceSession {
       initiator: initiator,
     );
     _links[peerId] = link;
-    // Drop the link once it closes so peerCount reflects live peers.
-    link.onStateChanged
-        .firstWhere((s) => s == VoiceConnectionState.closed)
-        .then((_) => _links.remove(peerId))
-        .ignore();
+    // Mirror each link's state into the aggregate stream, and drop the link
+    // once it closes so peerCount reflects live peers.
+    _subs[peerId] = link.onStateChanged.listen((s) {
+      if (s == VoiceConnectionState.closed) {
+        _links.remove(peerId);
+        _subs.remove(peerId)?.cancel();
+      }
+      _emitChange();
+    });
+    _emitChange();
     return link;
   }
 
   /// Close and forget one peer.
   Future<void> removePeer(String peerId) async {
     final link = _links.remove(peerId);
+    await _subs.remove(peerId)?.cancel();
     await link?.close();
+    _emitChange();
   }
 
   /// Close every link and end the session.
   Future<void> close() async {
     final links = List<PeerLink>.of(_links.values);
     _links.clear();
+    for (final sub in _subs.values) {
+      await sub.cancel();
+    }
+    _subs.clear();
     await Future.wait(links.map((l) => l.close()));
+    _emitChange();
+    await _changes.close();
   }
 }
