@@ -77,22 +77,33 @@ If a new top-level `lib/` directory is added, add it to this list and to the dep
 ## Native Platform Notes
 
 - **Android hotspot:** use a custom `SoftApConfiguration` with fixed SSID/password from the group session, not `startLocalOnlyHotspot` (generates random credentials per call, incompatible with the fixed-credential handoff design in ADR-002).
-- **iOS join:** `NEHotspotConfiguration`, one user approval per device per group session, auto-rejoins afterward as long as SSID/password are unchanged.
+- **iOS join:** system Camera reads a standard `WIFI:S:<ssid>;T:WPA;P:<password>;;` QR, one user approval per device per group session, auto-rejoins afterward as long as SSID/password are unchanged. `NEHotspotConfiguration` was dropped (paid-account entitlement, breaks free-provisioning signing); see ADR-002 addendum. A paid account could re-add it later as an in-app path without changing the credential format.
 - **Do not attempt concurrent AP + WiFi Direct/P2P roles on one device.** Explicitly rejected in ADR-001 due to chipset-dependent support.
 - **BT/WiFi coexistence** on the 2.4GHz band is chipset-dependent. No software mitigation planned; document as a minimum-spec / compatibility concern, and keep wired headset as a supported fallback path in the audio input selection UI.
 
 ## Delivery Phases
 
-Sequenced to validate the riskiest, most OS-version/OEM-dependent pieces first:
+Original sequencing validated the riskiest, most OS/OEM-dependent pieces first. As of 2026-08-11 the roadmap is reordered: no physical Android devices are available, so pure-Dart/Flutter work (Phases 2-4) is front-loaded and hardware-gated work (Phases 5-8) is deferred until devices return. This proves logic, not the product. The open product risk (fixed-credential hotspot + handoff on real iOS/Android OEMs) stays unanswered until Phase 5.
 
-1. **Phase 0 — Platform channel PoC.** Android custom hotspot with fixed credentials; iOS `NEHotspotConfiguration` join and auto-reconnect. Validate on real devices before anything else.
-2. **Phase 1 — Basic voice call.** Manual two-device connection over the hotspot, WebRTC audio, no election yet. Validate latency and audio quality baseline.
-3. **Phase 2 — Election and handoff.** RSSI broadcast, composite scoring, hysteresis, intent/ack handoff protocol.
-4. **Phase 3 — Audio priority and host-side mixing.**
-5. **Phase 4 — QR bootstrap and UI.**
-6. **Phase 5 — Battery/thermal optimization.** DTX, adaptive broadcast interval, screen-off daemon mode, headset-conditional AEC.
+Done:
 
-Do not skip ahead to later phases while Phase 0 native behavior is unvalidated on target devices; it is the highest-risk, most OS-fragile part of the system.
+- **Phase 0 (code complete, device validation deferred to Phase 5).** Fixed-credential hotspot bridge: Android host via `SoftApConfiguration` reflection with manual fallback, Android client join, iOS system-Camera `WIFI:` QR join (dropped `NEHotspotConfiguration`, see ADR-002 addendum).
+- **Phase 1 mock-track (code complete, device validation deferred to Phase 6).** WebRTC session state machine behind a transport boundary (`lib/audio/`), call screen bound to live connection state, driven by mock session/signaling. Real audio deferred.
+
+Pure-Dart phases (no hardware, do these next):
+
+2. **Phase 2 - Election scoring + handoff FSM (ADR-003).** Broadcast payload model (RSSI vector + battery/thermal snapshot + codec), deterministic ranking engine over `lib/election/fitness_score.dart` (worst-case RSSI), hysteresis gate (margin + sustained duration, injected clock), handoff state machine (`stable -> intentBroadcast -> awaitingAcks -> switching -> stable`, ack timeout to unilateral takeover, single-host invariant), election-daemon interface over a mock data channel + tick clock.
+3. **Phase 3 - Audio priority logic + state management (ADR-004).** Loudest-speaker-wins ducking (gain decisions with hold-time hysteresis over synthetic level samples), speaker-priority FSM, app state store (prefer `ChangeNotifier`/`ValueNotifier`, no new dep), DTX/headset-conditional-AEC config model. Decision layer only; real audio at Phase 6.
+4. **Phase 4 - QR bootstrap + full UI (ADR-002).** QR encode/decode round-trip with the deferred nonce field, in-app QR scanner dep for Android (iOS stays system Camera), trip-lifetime credential persistence, real create/join/call/roster screens replacing the Phase 0 PoC.
+
+Hardware-gated phases (deferred until Android devices are back):
+
+5. **Phase 5 - Phase 0/0b device validation.** Run `docs/PHASE0-DEVICE-CHECKLIST.md` on 2 Android (gate: same-credential rejoin + handoff sim), then iPhone client. This is the real product risk gate; everything above assumes it passes.
+6. **Phase 6 - Real WebRTC audio + host-side mixing (ADR-004).** Wire `WebRtcPeer.create` + socket signaling, mic capture, host-side mixing, ICE over the hotspot LAN, apply Phase 3 ducking + DTX config to live tracks, measure latency/quality baseline.
+7. **Phase 7 - Background execution (ADR-005).** Android foreground service + persistent notification, iOS background audio mode; survive screen-off and GPS-nav foreground.
+8. **Phase 8 - Battery/thermal optimization + sensors (ADR-003/005).** Native RSSI/battery/thermal reads feeding the Phase 2 election engine (mock-fed until now), DTX tuning, adaptive broadcast interval, screen-off daemon, BT/WiFi coexistence minimum-spec documentation.
+
+Do not treat Phases 2-4 completion as product validation. The native hotspot/audio behavior remains the highest-risk, most OS-fragile part of the system and is only proven at Phase 5+ on real hardware.
 
 ## Branching Strategy
 

@@ -3,6 +3,67 @@
 All notable changes to Toice. See `docs/adr/architecture-decisions.md` for the
 architecture this implements and `CLAUDE.md` for the delivery phase plan.
 
+## Roadmap reorder (2026-08-11)
+
+No physical Android devices are available, so the phase order is changed to
+front-load pure-Dart/Flutter work and defer everything that needs hardware.
+This proves logic, not the product: the fixed-credential hotspot + handoff on
+real iOS/Android OEMs stays unvalidated until Phase 5. Full detail in
+`CLAUDE.md`.
+
+- Pure-Dart, next: Phase 2 (election scoring + handoff FSM), Phase 3 (audio
+  priority logic + state management), Phase 4 (QR bootstrap + full UI).
+- Hardware-gated, deferred: Phase 5 (Phase 0/0b device validation), Phase 6
+  (real WebRTC audio + host-side mixing), Phase 7 (background execution),
+  Phase 8 (battery/thermal + native sensors).
+
+## Phase 1 - WebRTC session, mock-track (2026-08-11) ✅ (code complete, device validation deferred to Phase 6)
+
+WebRTC negotiation layer and a call screen bound to live connection state, built
+behind a transport boundary so the logic runs under `flutter test` without a
+device. Real audio (mic capture, host-side mixing, on-LAN ICE) is deferred to
+Phase 6.
+
+### Added
+
+- `lib/audio/signaling.dart`: SDP/ICE message types and a bidirectional
+  `Signaling` channel (on-device socket in Phase 6, loopback in tests).
+- `lib/audio/rtc_peer.dart`: `RtcPeer`, the narrow slice of `RTCPeerConnection`
+  the session needs (negotiation + connection state), plus a factory typedef.
+- `lib/audio/peer_link.dart`: per-link SDP offer/answer + ICE trickle state
+  machine. Client offers, host answers (star topology, ADR-001).
+- `lib/audio/voice_session.dart`: host (one link per client) vs client (single
+  link to host) roles, `connectionChanges` broadcast stream, teardown.
+- `lib/audio/webrtc_peer.dart`: device-backed `RtcPeer` wrapping
+  `flutter_webrtc`, local-network ICE only (no STUN/TURN). ponytail: negotiation
+  only, no mic capture or host-side mixing yet.
+- `lib/ui/call_screen.dart`: call UI rendering live per-peer connection state,
+  session + signaling injected, with a mock harness (scripted peer, null
+  signaling) so it runs and widget-tests without libwebrtc.
+- `home_screen` routes into `CallScreen` for host and client roles.
+- Dep (pinned exact): `flutter_webrtc: 1.1.0`.
+- Tests: 9 audio (loopback signaling + fake peers), 2 call-screen widget tests,
+  1 navigation test. Full suite green (27 total).
+
+### Deviations from spec
+
+- This is the mock-track only. ADR-004 real audio (transport over the hotspot
+  LAN, Opus DTX, loudest-speaker ducking, host-side mixing) is intentionally
+  deferred to Phase 6 because it needs hardware. The state machine is proven;
+  the media path is not.
+
+## Next
+
+**Phase 2 - Election scoring + handoff FSM (ADR-003).** Pure Dart, no hardware.
+Broadcast payload model (RSSI vector + battery/thermal snapshot + codec),
+deterministic ranking engine over `lib/election/fitness_score.dart` (worst-case
+RSSI), hysteresis gate (margin + sustained duration, injected clock), handoff
+state machine (`stable -> intentBroadcast -> awaitingAcks -> switching ->
+stable`, ack timeout to unilateral takeover, single-host invariant), and an
+election-daemon interface over a mock data channel + tick clock. Device
+validation of Phase 0/0b and Phase 1 audio is deferred to Phases 5/6 until
+Android hardware is available.
+
 ## Phase 0 - Platform channel PoC (2026-08-11) ✅ (code complete, device validation pending)
 
 Made the fixed-credential hotspot bridge real: Android host (reflection) + Android
@@ -54,15 +115,6 @@ the APK builds; on-device validation (2 Android + iPhone) is a manual step track
   needs API 33+. Below that, or on any OEM block, the user creates the hotspot manually.
 - **iOS is excluded from host election** (ADR-003 addendum): it cannot host an AP, so
   every group needs at least one Android and all-iPhone convoys are out of scope.
-
-## Next
-
-**Phase 0b - iPhone as client.** No new Swift. Sideload to a physical iPhone with a free
-Apple ID (confirm signing works now the entitlement is gone), scan the Android host's
-`WIFI:` QR with the system Camera, and confirm the iPhone gets an IP. The decisive test:
-cycle the Android hotspot with the same credentials and confirm the iPhone auto-rejoins
-without re-scanning (validates ADR-002/003 on iOS). If it re-prompts every time, reopen
-ADR-002/003 before Phase 1.
 
 ## Scaffold (2026-08-11)
 
