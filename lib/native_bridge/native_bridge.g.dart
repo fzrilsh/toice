@@ -15,10 +15,31 @@ PlatformException _createConnectionError(String channelName) {
   );
 }
 
+List<Object?> wrapResponse({
+  Object? result,
+  PlatformException? error,
+  bool empty = false,
+}) {
+  if (empty) {
+    return <Object?>[];
+  }
+  if (error == null) {
+    return <Object?>[result];
+  }
+  return <Object?>[error.code, error.message, error.details];
+}
+
 /// OS thermal state, normalized across platforms (ADR-003 thermal_score).
 /// Maps ProcessInfo.thermalState (iOS) and PowerManager thermal status
 /// (Android) onto a common ordinal.
 enum ThermalState { nominal, fair, serious, critical }
+
+/// How the host AP was brought up (ADR-002 addendum).
+///
+/// [programmatic]: app configured the SoftAp with the fixed credentials
+/// (Android 13+ reflection path). [manualRequired]: the app could not set
+/// credentials, so the user must configure the hotspot by hand in Settings.
+enum HostStartMode { programmatic, manualRequired }
 
 /// Fixed WiFi hotspot credentials shared for the life of a trip (ADR-002).
 /// Reused by every subsequent host so iOS auto-rejoins without a new prompt.
@@ -59,8 +80,11 @@ class _PigeonCodec extends StandardMessageCodec {
     } else if (value is ThermalState) {
       buffer.putUint8(129);
       writeValue(buffer, value.index);
-    } else if (value is HotspotCredentials) {
+    } else if (value is HostStartMode) {
       buffer.putUint8(130);
+      writeValue(buffer, value.index);
+    } else if (value is HotspotCredentials) {
+      buffer.putUint8(131);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -74,6 +98,9 @@ class _PigeonCodec extends StandardMessageCodec {
         final int? value = readValue(buffer) as int?;
         return value == null ? null : ThermalState.values[value];
       case 130:
+        final int? value = readValue(buffer) as int?;
+        return value == null ? null : HostStartMode.values[value];
+      case 131:
         return HotspotCredentials.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
@@ -82,7 +109,8 @@ class _PigeonCodec extends StandardMessageCodec {
 }
 
 /// Hotspot host/join control (ADR-001, ADR-002). Android: custom
-/// SoftApConfiguration. iOS: NEHotspotConfiguration join (host not supported).
+/// SoftApConfiguration via reflection, else manual fallback. iOS cannot host,
+/// and joins via the system Camera WiFi-QR flow, not this API.
 class HotspotApi {
   /// Constructor for [HotspotApi].  The [binaryMessenger] named argument is
   /// available for dependency injection.  If it is left null, the default
@@ -100,7 +128,7 @@ class HotspotApi {
 
   final String pigeonVar_messageChannelSuffix;
 
-  Future<void> startHost(HotspotCredentials credentials) async {
+  Future<HostStartMode> startHost(HotspotCredentials credentials) async {
     final String pigeonVar_channelName =
         'dev.flutter.pigeon.toice.HotspotApi.startHost$pigeonVar_messageChannelSuffix';
     final BasicMessageChannel<Object?> pigeonVar_channel =
@@ -119,14 +147,44 @@ class HotspotApi {
         message: pigeonVar_replyList[1] as String?,
         details: pigeonVar_replyList[2],
       );
+    } else if (pigeonVar_replyList[0] == null) {
+      throw PlatformException(
+        code: 'null-error',
+        message: 'Host platform returned null value for non-null return value.',
+      );
     } else {
-      return;
+      return (pigeonVar_replyList[0] as HostStartMode?)!;
     }
   }
 
   Future<void> stopHost() async {
     final String pigeonVar_channelName =
         'dev.flutter.pigeon.toice.HotspotApi.stopHost$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel =
+        BasicMessageChannel<Object?>(
+          pigeonVar_channelName,
+          pigeonChannelCodec,
+          binaryMessenger: pigeonVar_binaryMessenger,
+        );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(null) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else {
+      return;
+    }
+  }
+
+  /// Open the OS tethering/hotspot settings for the manual fallback path.
+  Future<void> openTetherSettings() async {
+    final String pigeonVar_channelName =
+        'dev.flutter.pigeon.toice.HotspotApi.openTetherSettings$pigeonVar_messageChannelSuffix';
     final BasicMessageChannel<Object?> pigeonVar_channel =
         BasicMessageChannel<Object?>(
           pigeonVar_channelName,
@@ -371,6 +429,97 @@ class BackgroundApi {
       );
     } else {
       return;
+    }
+  }
+}
+
+/// Native -> Dart push channel for asynchronous hotspot state changes.
+/// The host API is request/response only; the OS may tear the AP down or a
+/// client link may drop out of band, so those arrive here.
+abstract class HotspotEvents {
+  static const MessageCodec<Object?> pigeonChannelCodec = _PigeonCodec();
+
+  /// The hosted AP stopped (OS shutdown, failure, or explicit stopHost).
+  void onHostStopped(String reason);
+
+  /// This device's client connection to the hotspot came up or went down.
+  void onClientStateChanged(bool connected);
+
+  static void setUp(
+    HotspotEvents? api, {
+    BinaryMessenger? binaryMessenger,
+    String messageChannelSuffix = '',
+  }) {
+    messageChannelSuffix = messageChannelSuffix.isNotEmpty
+        ? '.$messageChannelSuffix'
+        : '';
+    {
+      final BasicMessageChannel<Object?>
+      pigeonVar_channel = BasicMessageChannel<Object?>(
+        'dev.flutter.pigeon.toice.HotspotEvents.onHostStopped$messageChannelSuffix',
+        pigeonChannelCodec,
+        binaryMessenger: binaryMessenger,
+      );
+      if (api == null) {
+        pigeonVar_channel.setMessageHandler(null);
+      } else {
+        pigeonVar_channel.setMessageHandler((Object? message) async {
+          assert(
+            message != null,
+            'Argument for dev.flutter.pigeon.toice.HotspotEvents.onHostStopped was null.',
+          );
+          final List<Object?> args = (message as List<Object?>?)!;
+          final String? arg_reason = (args[0] as String?);
+          assert(
+            arg_reason != null,
+            'Argument for dev.flutter.pigeon.toice.HotspotEvents.onHostStopped was null, expected non-null String.',
+          );
+          try {
+            api.onHostStopped(arg_reason!);
+            return wrapResponse(empty: true);
+          } on PlatformException catch (e) {
+            return wrapResponse(error: e);
+          } catch (e) {
+            return wrapResponse(
+              error: PlatformException(code: 'error', message: e.toString()),
+            );
+          }
+        });
+      }
+    }
+    {
+      final BasicMessageChannel<Object?>
+      pigeonVar_channel = BasicMessageChannel<Object?>(
+        'dev.flutter.pigeon.toice.HotspotEvents.onClientStateChanged$messageChannelSuffix',
+        pigeonChannelCodec,
+        binaryMessenger: binaryMessenger,
+      );
+      if (api == null) {
+        pigeonVar_channel.setMessageHandler(null);
+      } else {
+        pigeonVar_channel.setMessageHandler((Object? message) async {
+          assert(
+            message != null,
+            'Argument for dev.flutter.pigeon.toice.HotspotEvents.onClientStateChanged was null.',
+          );
+          final List<Object?> args = (message as List<Object?>?)!;
+          final bool? arg_connected = (args[0] as bool?);
+          assert(
+            arg_connected != null,
+            'Argument for dev.flutter.pigeon.toice.HotspotEvents.onClientStateChanged was null, expected non-null bool.',
+          );
+          try {
+            api.onClientStateChanged(arg_connected!);
+            return wrapResponse(empty: true);
+          } on PlatformException catch (e) {
+            return wrapResponse(error: e);
+          } catch (e) {
+            return wrapResponse(
+              error: PlatformException(code: 'error', message: e.toString()),
+            );
+          }
+        });
+      }
     }
   }
 }

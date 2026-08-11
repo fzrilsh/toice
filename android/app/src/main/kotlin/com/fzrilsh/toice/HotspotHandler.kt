@@ -11,11 +11,14 @@ package com.fzrilsh.toice
 class HotspotHandler : HotspotApi {
   override fun startHost(
     credentials: HotspotCredentials,
-    callback: (Result<Unit>) -> Unit,
+    callback: (Result<HostStartMode>) -> Unit,
   ) = callback(notImplemented("HotspotApi.startHost"))
 
   override fun stopHost(callback: (Result<Unit>) -> Unit) =
     callback(notImplemented("HotspotApi.stopHost"))
+
+  override fun openTetherSettings(callback: (Result<Unit>) -> Unit) =
+    callback(notImplemented("HotspotApi.openTetherSettings"))
 
   override fun joinAsClient(
     credentials: HotspotCredentials,
