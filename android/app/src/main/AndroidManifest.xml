@@ -2,7 +2,10 @@
     <!-- Core P2P voice intercom permissions (ADR-001/002/004/005).
          Hotspot host/join, RSSI reads, mic, and foreground keep-alive. -->
     <uses-permission android:name="android.permission.INTERNET"/>
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <!-- Pre-33 devices need location for WiFi APIs; on 33+ NEARBY_WIFI_DEVICES
+         replaces it, so cap it at 32. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
+        android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
     <!-- NEARBY_WIFI_DEVICES (API 33+): declare no-location intent since we do

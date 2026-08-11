@@ -35,6 +35,10 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
 
+  # Runtime permission requests (NEARBY_WIFI_DEVICES / location) before host or
+  # join (ADR-002). Pinned exact for reproducible builds.
+  permission_handler: 11.3.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
