@@ -3,6 +3,43 @@
 All notable changes to Toice. See `docs/adr/architecture-decisions.md` for the
 architecture this implements and `CLAUDE.md` for the delivery phase plan.
 
+## Phase 2 - Election scoring + handoff FSM (2026-08-11) ✅ (pure Dart)
+
+The full host-election pipeline (ADR-003) as pure, unit-tested Dart. No
+hardware: the daemon runs over a mock channel and an injected clock, so the
+whole loop is deterministic under `flutter test`. The data channel and native
+AP swap it drives are Phase 6/7.
+
+### Added
+
+- `lib/election/broadcast.dart`: `ElectionBroadcast` wire model (sender, RSSI
+  vector, battery, thermal, `hostCapable`, timestamp) + JSON codec.
+  `RssiVector.worstDbm` returns the weakest link so a candidate is scored on its
+  worst peer (ADR-003). `rssiScoreFromDbm` / `thermalScoreFromState` mappers.
+- `lib/election/ranking.dart`: `rankCandidates` composites fitness over
+  `fitness_score.dart` and sorts best-first, excluding non-host-capable (iOS)
+  and blind (no-link) devices; ties break by deviceId so ranking is total and
+  identical across devices with no shared clock.
+- `lib/election/hysteresis.dart`: `HysteresisGate`, margin + sustained-duration
+  anti-flap. A lapse resets the timer; a new challenger restarts its window.
+- `lib/election/handoff.dart`: `HandoffMachine`, `stable -> awaitingAcks ->
+  switching -> stable` with ack-timeout unilateral takeover. `performSwitch`
+  fires exactly once (single-host invariant, ADR-001); emits actions, never
+  touches the radio.
+- `lib/election/election_daemon.dart`: `ElectionDaemon` ties it together over
+  `ElectionChannel` + `HostSwitcher` abstractions, pruning stale peers, ranking,
+  gating, and driving the handoff on a win. Advanced by explicit `tick()`.
+- Tests: broadcast (9), ranking (6), hysteresis (7), handoff (7), daemon (6).
+  Full suite green (62 total).
+
+### Deviations from spec
+
+- Logic only. The `ElectionChannel` (data channel over the hotspot) and
+  `HostSwitcher` (native AP start/stop) are interfaces here; their real
+  implementations and on-device validation of actual handoff timing are deferred
+  to Phases 6/7. The election math and protocol are proven; the transport is
+  not.
+
 ## Roadmap reorder (2026-08-11)
 
 No physical Android devices are available, so the phase order is changed to
@@ -54,15 +91,13 @@ Phase 6.
 
 ## Next
 
-**Phase 2 - Election scoring + handoff FSM (ADR-003).** Pure Dart, no hardware.
-Broadcast payload model (RSSI vector + battery/thermal snapshot + codec),
-deterministic ranking engine over `lib/election/fitness_score.dart` (worst-case
-RSSI), hysteresis gate (margin + sustained duration, injected clock), handoff
-state machine (`stable -> intentBroadcast -> awaitingAcks -> switching ->
-stable`, ack timeout to unilateral takeover, single-host invariant), and an
-election-daemon interface over a mock data channel + tick clock. Device
-validation of Phase 0/0b and Phase 1 audio is deferred to Phases 5/6 until
-Android hardware is available.
+**Phase 3 - Audio priority logic + state management (ADR-004).** Pure Dart, no
+hardware. Loudest-speaker-wins ducking and speaker-priority resolution as pure
+functions over per-stream audio-level snapshots, plus the session/app state
+management that binds election + audio + connection state for the UI. Host-side
+mixing and real Opus/DTX media stay in Phase 6 (device work). Device validation
+of Phase 0/0b and Phase 1 audio is deferred to Phases 5/6 until Android hardware
+is available.
 
 ## Phase 0 - Platform channel PoC (2026-08-11) ✅ (code complete, device validation pending)
 
