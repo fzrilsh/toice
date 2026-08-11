@@ -1,0 +1,16 @@
+# Managed via lefthook (https://lefthook.dev). Install hooks with:
+#   lefthook install
+# Commands run through FVM so everyone uses the pinned Flutter version.
+
+pre-commit:
+  parallel: true
+  commands:
+    format:
+      run: fvm dart format --set-exit-if-changed .
+    analyze:
+      run: fvm flutter analyze
+
+pre-push:
+  commands:
+    test:
+      run: fvm flutter test

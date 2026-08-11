@@ -1,0 +1,67 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ / Android Studio
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# VS Code
+.vscode/
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/build/
+app.*.symbols
+app.*.map.json
+
+# pubspec.lock is committed (this is an app, not a package)
+
+# FVM: pin file committed, cached SDK ignored
+.fvm/
+
+# Android
+android/local.properties
+android/.gradle/
+android/captures/
+android/.cxx/
+android/app/debug
+android/app/profile
+android/app/release
+**/*.keystore
+**/*.jks
+key.properties
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/App.framework
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+ios/Flutter/flutter_export_environment.sh
+ios/ServiceDefinitions.json
+ios/Runner/GeneratedPluginRegistrant.*
+**/*.mobileprovision
+# ios/Podfile.lock is committed
+
+# Local Claude settings (per-machine, not shared)
+.claude/settings.local.json
