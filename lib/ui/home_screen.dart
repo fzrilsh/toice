@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import 'package:toice/audio/voice_session.dart';
 import 'package:toice/group/group_credentials.dart';
 import 'package:toice/group/permissions.dart';
 import 'package:toice/native_bridge/native_bridge.g.dart';
+import 'package:toice/ui/call_screen.dart';
 
 /// Phase 0 PoC screen (ADR-002): host a fixed-credential hotspot or join one.
 /// Not the final UI (that is Phase 4); this exists to validate the native
@@ -103,6 +105,22 @@ class _HomeScreenState extends State<HomeScreen> implements HotspotEvents {
     }
   }
 
+  /// Phase 1: open the call screen. The hotspot bridge (host/join above) forms
+  /// the network; the call screen runs the WebRTC session over it. Wired to the
+  /// mock session/signaling for now (ADR-004); swap for the device stack when
+  /// validating audio on hardware.
+  void _openCall(SessionRole role) {
+    final session = role == SessionRole.host
+        ? mockHostSession()
+        : mockClientSession();
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            CallScreen(session: session, newSignaling: mockSignaling),
+      ),
+    );
+  }
+
   // HotspotEvents (native -> Dart).
   @override
   void onHostStopped(String reason) => _append('event onHostStopped: $reason');
@@ -171,6 +189,11 @@ class _HomeScreenState extends State<HomeScreen> implements HotspotEvents {
               ],
               const SizedBox(height: 8),
               OutlinedButton(
+                onPressed: () => _openCall(SessionRole.host),
+                child: const Text('Open call screen (host)'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton(
                 onPressed: _stopHost,
                 child: const Text('Stop hosting'),
               ),
@@ -210,6 +233,11 @@ class _HomeScreenState extends State<HomeScreen> implements HotspotEvents {
                 const SizedBox(width: 8),
                 OutlinedButton(onPressed: _leave, child: const Text('Leave')),
               ],
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: () => _openCall(SessionRole.client),
+              child: const Text('Open call screen (client)'),
             ),
           ],
         ),
