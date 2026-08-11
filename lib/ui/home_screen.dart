@@ -115,8 +115,11 @@ class _HomeScreenState extends State<HomeScreen> implements HotspotEvents {
         : mockClientSession();
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) =>
-            CallScreen(session: session, newSignaling: mockSignaling),
+        builder: (_) => CallScreen(
+          session: session,
+          newSignaling: mockSignaling,
+          speakerSource: mockSpeakerSource(),
+        ),
       ),
     );
   }
