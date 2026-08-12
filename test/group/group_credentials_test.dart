@@ -59,5 +59,52 @@ void main() {
         }
       }
     });
+
+    test('nonce is generated, varies, and is NOT in the QR (Option B)', () {
+      final a = GroupCredentials.generate();
+      final b = GroupCredentials.generate();
+      expect(a.nonce, isNotEmpty);
+      expect(a.nonce, isNot(b.nonce));
+      // The join QR must stay a strictly standard WIFI: string.
+      expect(a.toWifiQrPayload().contains(a.nonce), isFalse);
+    });
+  });
+
+  group('fromWifiQrPayload', () {
+    test('round-trips SSID/password/groupId from a scanned QR', () {
+      final c = GroupCredentials.generate();
+      final scanned = GroupCredentials.fromWifiQrPayload(c.toWifiQrPayload());
+      expect(scanned.ssid, c.ssid);
+      expect(scanned.password, c.password);
+      expect(scanned.groupId, c.groupId);
+      // Nonce is not in the QR; a scanned join starts with an empty nonce.
+      expect(scanned.nonce, isEmpty);
+    });
+
+    test('rejects a non-Toice SSID', () {
+      expect(
+        () =>
+            GroupCredentials.fromWifiQrPayload('WIFI:S:Home;T:WPA;P:secret;;'),
+        throwsFormatException,
+      );
+    });
+
+    test('rejects a malformed payload', () {
+      expect(
+        () => GroupCredentials.fromWifiQrPayload('not a wifi qr'),
+        throwsFormatException,
+      );
+    });
+  });
+
+  group('json round-trip', () {
+    test('toJson/fromJson preserves every field including the nonce', () {
+      final c = GroupCredentials.generate();
+      final back = GroupCredentials.fromJson(c.toJson());
+      expect(back.ssid, c.ssid);
+      expect(back.password, c.password);
+      expect(back.groupId, c.groupId);
+      expect(back.nonce, c.nonce);
+    });
   });
 }

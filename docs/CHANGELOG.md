@@ -3,6 +3,52 @@
 All notable changes to Toice. See `docs/adr/architecture-decisions.md` for the
 architecture this implements and `CLAUDE.md` for the delivery phase plan.
 
+## Phase 4 - QR bootstrap + full UI (2026-08-12) ✅ (pure Dart)
+
+The trip bootstrap (ADR-002) and the real screens that replace the Phase 0 PoC,
+as pure, unit- and widget-tested Dart/Flutter. No hardware: the QR codec,
+persistence, and trip lifecycle are all tested without a device; the in-app
+camera scan itself is exercised on hardware at Phase 5.
+
+### Added
+
+- `lib/group/group_credentials.dart`: a persisted `nonce` (generated from the
+  same secure RNG), `fromWifiQrPayload` to parse a scanned standard `WIFI:`
+  string back into credentials (groupId from the `Toice-` SSID prefix, throws
+  on a malformed or non-Toice payload), and `toJson`/`fromJson`.
+- `lib/group/credential_store.dart`: `CredentialStore` (`shared_preferences`,
+  pinned exact), one JSON blob under one key, save/load/clear for the
+  trip-lifetime credentials. A corrupt blob loads as null, never crashing
+  launch.
+- `lib/group/group_controller.dart`: `GroupController` (`ChangeNotifier`, no new
+  dep) owning the active credentials + role, with create/joinWith/restore/
+  endTrip. `restore` auto-loads a persisted trip on relaunch so a mid-ride
+  restart rejoins without re-scanning.
+- `lib/ui/scan_screen.dart`: `ScanScreen` (`mobile_scanner`, pinned exact, +
+  `CAMERA` permission). Android scans the host's QR in-app and pops parsed
+  credentials; iOS gets manual SSID/password entry as the in-app fallback (it
+  joins via the system Camera). Platform branch is injected for testability.
+- `lib/ui/create_screen.dart`: host screen showing the QR + big SSID/password
+  text, absorbing the Phase 0 native start + manual-fallback path.
+- `lib/ui/home_screen.dart`: reworked from the Phase 0 PoC into a Create/Join
+  landing that auto-restores a persisted trip and shows an active-trip banner
+  with End trip.
+- Tests: credential codec (+5), credential store (5), group controller (5),
+  scan screen (3), reworked home-screen nav/restore (3). Full suite green (102).
+
+### Deviations from spec
+
+- **Nonce is not in the QR (Option B).** ADR-002 lists a nonce in the QR, but
+  the addendum requires the join QR to stay a strictly standard `WIFI:` string
+  the iOS/Android system Camera parses. A non-standard tag risks a silent parse
+  failure there, so the nonce is generated and persisted (rides in
+  `toJson`/`fromJson`) but left out of `toWifiQrPayload`. A scanned join starts
+  with an empty nonce; app-layer auth using it over the data channel is a later
+  hardening phase.
+- Screens still open the mock voice session; real audio (mic, host-side mixing,
+  live tracks) is Phase 6. Native hotspot start/join is wired but device-gated
+  (Phase 5).
+
 ## Phase 3 - Audio priority + state management (2026-08-11) ✅ (pure Dart)
 
 The audio decision layer (ADR-004) and the app state that binds it, as pure,
@@ -128,13 +174,13 @@ Phase 6.
 
 ## Next
 
-**Phase 4 - QR bootstrap + full UI (ADR-002).** Pure Dart / Flutter, no
-hardware. QR encode/decode round-trip carrying the deferred nonce field, an
-in-app QR scanner dependency for Android (iOS stays system Camera),
-trip-lifetime credential persistence, and real create/join/call/roster screens
-replacing the Phase 0 PoC home screen. Device validation of Phase 0/0b and the
-Phase 1/3 audio path is deferred to Phases 5/6 until Android hardware is
-available.
+**Phase 5 - Phase 0/0b device validation.** Hardware-gated, deferred until
+Android devices are back. Run `docs/PHASE0-DEVICE-CHECKLIST.md` on 2 Android
+(gate: same-credential rejoin + handoff simulation), then an iPhone client.
+This is the real product-risk gate: the fixed-credential hotspot and handoff on
+real iOS/Android OEMs stays unvalidated until it passes, and everything in
+Phases 0-4 assumes it does. Add a checklist item confirming the system Camera
+joins from the standard `WIFI:` QR with no nonce tag (Option B).
 
 ## Phase 0 - Platform channel PoC (2026-08-11) ✅ (code complete, device validation pending)
 
