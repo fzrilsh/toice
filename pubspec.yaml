@@ -49,7 +49,14 @@ dependencies:
   # needs a physical device; session logic sits behind a transport boundary so
   # it stays unit-testable without one (Phase 1).
   flutter_webrtc: 1.1.0
+  # Persist the group credentials for the trip lifetime so every device reuses
+  # the fixed SSID/password across host handoffs (ADR-002). Pinned exact.
   shared_preferences: 2.5.5
+
+  # In-app QR scanner for Android join (ADR-002 addendum, Phase 4). iOS keeps
+  # the system Camera; this covers Android, which has no built-in scan-to-join.
+  # Pinned exact.
+  mobile_scanner: 7.4.0
 
 dev_dependencies:
   flutter_test:

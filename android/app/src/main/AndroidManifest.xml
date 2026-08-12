@@ -16,6 +16,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- In-app QR scanner for Android join (ADR-002 addendum, Phase 4).
+         iOS scans with the system Camera and needs no app camera permission. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
     <application
         android:label="toice"
         android:name="${applicationName}"
