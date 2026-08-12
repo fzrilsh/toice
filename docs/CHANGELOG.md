@@ -3,6 +3,43 @@
 All notable changes to Toice. See `docs/adr/architecture-decisions.md` for the
 architecture this implements and `CLAUDE.md` for the delivery phase plan.
 
+## Phase 3 - Audio priority + state management (2026-08-11) ✅ (pure Dart)
+
+The audio decision layer (ADR-004) and the app state that binds it, as pure,
+unit-tested Dart. No hardware: ducking runs on plain level numbers, metering is
+a mock stream, and the state store folds it together for the UI. Host-side
+mixing and real Opus/DTX on live tracks are Phase 6.
+
+### Added
+
+- `lib/audio/ducking.dart`: `DuckingEngine`, loudest-speaker-wins. Maps
+  per-stream level snapshots (dBFS) to gain decisions (active 0 dB, others
+  -18 dB), with hold-time hysteresis so two similar speakers don't thrash and an
+  activation floor so ambient noise never grabs "active". Pure numbers, no
+  `flutter_webrtc`.
+- `lib/audio/speaker_levels.dart`: `SpeakerLevelSource` metering boundary
+  (WebRTC stats poller on device, `MockSpeakerLevelSource` in tests) +
+  `ActiveSpeakerTracker` that folds frames through the engine and republishes
+  `activeSpeaker` (deduped) and per-peer `gains` streams.
+- `lib/audio/audio_config.dart`: `AudioPipelineConfig.forRoute`, DTX always on,
+  AEC on for the device speaker and off for headsets (no acoustic loop, saves
+  CPU).
+- `lib/app/session_store.dart` (new top-level `lib/app/`): `SessionStore`
+  (`ChangeNotifier`, no new dep), one source of truth binding connection state,
+  active speaker, and mirrored host/handoff status into a `List<RiderView>`.
+- `lib/ui/call_screen.dart`: roster now renders from `SessionStore` with a live
+  speaking indicator and host marker; mock harness gains a scripted speaker
+  source.
+- Tests: ducking (8), speaker levels (4), audio config (3), session store (4),
+  plus an updated call-screen speaking-indicator widget test. Full suite green.
+
+### Deviations from spec
+
+- Decision layer only. Metering (`SpeakerLevelSource`) and applying the gain map
+  / DTX / AEC config to real tracks are interfaces here; the WebRTC stats poller,
+  host-side mixing, and live media are deferred to Phase 6. The priority and
+  config *decisions* are proven; the media path is not.
+
 ## Phase 2 - Election scoring + handoff FSM (2026-08-11) ✅ (pure Dart)
 
 The full host-election pipeline (ADR-003) as pure, unit-tested Dart. No
@@ -91,13 +128,13 @@ Phase 6.
 
 ## Next
 
-**Phase 3 - Audio priority logic + state management (ADR-004).** Pure Dart, no
-hardware. Loudest-speaker-wins ducking and speaker-priority resolution as pure
-functions over per-stream audio-level snapshots, plus the session/app state
-management that binds election + audio + connection state for the UI. Host-side
-mixing and real Opus/DTX media stay in Phase 6 (device work). Device validation
-of Phase 0/0b and Phase 1 audio is deferred to Phases 5/6 until Android hardware
-is available.
+**Phase 4 - QR bootstrap + full UI (ADR-002).** Pure Dart / Flutter, no
+hardware. QR encode/decode round-trip carrying the deferred nonce field, an
+in-app QR scanner dependency for Android (iOS stays system Camera),
+trip-lifetime credential persistence, and real create/join/call/roster screens
+replacing the Phase 0 PoC home screen. Device validation of Phase 0/0b and the
+Phase 1/3 audio path is deferred to Phases 5/6 until Android hardware is
+available.
 
 ## Phase 0 - Platform channel PoC (2026-08-11) ✅ (code complete, device validation pending)
 

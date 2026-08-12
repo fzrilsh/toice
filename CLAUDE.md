@@ -63,7 +63,8 @@ See `docs/adr/architecture-decisions.md` for full context and rationale on each.
 ```
 lib/
   election/       # RSSI/battery/thermal scoring, handoff state machine (pure Dart, unit tested)
-  audio/           # WebRTC session management, DTX config, speaker priority logic
+  audio/           # WebRTC session mgmt, DTX config, ducking/speaker-priority logic
+  app/             # Reactive app state store (SessionStore, binds session+audio+host)
   native_bridge/   # Platform channel method definitions and Dart-side wrappers
   group/           # QR bootstrap, group/session credential state
   ui/              # Screens, widgets
@@ -89,11 +90,11 @@ Done:
 
 - **Phase 0 (code complete, device validation deferred to Phase 5).** Fixed-credential hotspot bridge: Android host via `SoftApConfiguration` reflection with manual fallback, Android client join, iOS system-Camera `WIFI:` QR join (dropped `NEHotspotConfiguration`, see ADR-002 addendum).
 - **Phase 1 mock-track (code complete, device validation deferred to Phase 6).** WebRTC session state machine behind a transport boundary (`lib/audio/`), call screen bound to live connection state, driven by mock session/signaling. Real audio deferred.
+- **Phase 2 (code complete, pure Dart).** Election scoring + handoff FSM (ADR-003): broadcast payload model + score mappers, deterministic ranking (worst-case RSSI, iOS excluded), hysteresis gate, handoff state machine, election daemon over a mock channel + tick clock. All under `lib/election/`, unit tested.
+- **Phase 3 (code complete, pure Dart).** Audio priority + state management (ADR-004): loudest-speaker-wins ducking engine (hold-time hysteresis), speaker-level source boundary + active-speaker tracker, DTX/headset-conditional-AEC config model (`lib/audio/`), and `SessionStore` reactive state binding (`lib/app/`). Call screen renders the roster with a live speaking indicator. Decision layer only; real audio at Phase 6.
 
 Pure-Dart phases (no hardware, do these next):
 
-2. **Phase 2 - Election scoring + handoff FSM (ADR-003).** Broadcast payload model (RSSI vector + battery/thermal snapshot + codec), deterministic ranking engine over `lib/election/fitness_score.dart` (worst-case RSSI), hysteresis gate (margin + sustained duration, injected clock), handoff state machine (`stable -> intentBroadcast -> awaitingAcks -> switching -> stable`, ack timeout to unilateral takeover, single-host invariant), election-daemon interface over a mock data channel + tick clock.
-3. **Phase 3 - Audio priority logic + state management (ADR-004).** Loudest-speaker-wins ducking (gain decisions with hold-time hysteresis over synthetic level samples), speaker-priority FSM, app state store (prefer `ChangeNotifier`/`ValueNotifier`, no new dep), DTX/headset-conditional-AEC config model. Decision layer only; real audio at Phase 6.
 4. **Phase 4 - QR bootstrap + full UI (ADR-002).** QR encode/decode round-trip with the deferred nonce field, in-app QR scanner dep for Android (iOS stays system Camera), trip-lifetime credential persistence, real create/join/call/roster screens replacing the Phase 0 PoC.
 
 Hardware-gated phases (deferred until Android devices are back):
