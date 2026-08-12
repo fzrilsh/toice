@@ -55,6 +55,10 @@ private func wrapError(_ error: Any) -> [Any?] {
   ]
 }
 
+private func createConnectionError(withChannelName channelName: String) -> PigeonError {
+  return PigeonError(code: "channel-error", message: "Unable to establish connection on channel: '\(channelName)'.", details: "")
+}
+
 private func isNullish(_ value: Any?) -> Bool {
   return value is NSNull || value == nil
 }
@@ -72,6 +76,16 @@ enum ThermalState: Int {
   case fair = 1
   case serious = 2
   case critical = 3
+}
+
+/// How the host AP was brought up (ADR-002 addendum).
+///
+/// [programmatic]: app configured the SoftAp with the fixed credentials
+/// (Android 13+ reflection path). [manualRequired]: the app could not set
+/// credentials, so the user must configure the hotspot by hand in Settings.
+enum HostStartMode: Int {
+  case programmatic = 0
+  case manualRequired = 1
 }
 
 /// Fixed WiFi hotspot credentials shared for the life of a trip (ADR-002).
@@ -115,6 +129,12 @@ private class NativeBridgePigeonCodecReader: FlutterStandardReader {
       }
       return nil
     case 130:
+      let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
+      if let enumResultAsInt = enumResultAsInt {
+        return HostStartMode(rawValue: enumResultAsInt)
+      }
+      return nil
+    case 131:
       return HotspotCredentials.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
@@ -127,8 +147,11 @@ private class NativeBridgePigeonCodecWriter: FlutterStandardWriter {
     if let value = value as? ThermalState {
       super.writeByte(129)
       super.writeValue(value.rawValue)
-    } else if let value = value as? HotspotCredentials {
+    } else if let value = value as? HostStartMode {
       super.writeByte(130)
+      super.writeValue(value.rawValue)
+    } else if let value = value as? HotspotCredentials {
+      super.writeByte(131)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)
@@ -152,12 +175,15 @@ class NativeBridgePigeonCodec: FlutterStandardMessageCodec, @unchecked Sendable 
 
 
 /// Hotspot host/join control (ADR-001, ADR-002). Android: custom
-/// SoftApConfiguration. iOS: NEHotspotConfiguration join (host not supported).
+/// SoftApConfiguration via reflection, else manual fallback. iOS cannot host,
+/// and joins via the system Camera WiFi-QR flow, not this API.
 ///
 /// Generated protocol from Pigeon that represents a handler of messages from Flutter.
 protocol HotspotApi {
-  func startHost(credentials: HotspotCredentials, completion: @escaping (Result<Void, Error>) -> Void)
+  func startHost(credentials: HotspotCredentials, completion: @escaping (Result<HostStartMode, Error>) -> Void)
   func stopHost(completion: @escaping (Result<Void, Error>) -> Void)
+  /// Open the OS tethering/hotspot settings for the manual fallback path.
+  func openTetherSettings(completion: @escaping (Result<Void, Error>) -> Void)
   func joinAsClient(credentials: HotspotCredentials, completion: @escaping (Result<Void, Error>) -> Void)
   func leave(completion: @escaping (Result<Void, Error>) -> Void)
 }
@@ -175,8 +201,8 @@ class HotspotApiSetup {
         let credentialsArg = args[0] as! HotspotCredentials
         api.startHost(credentials: credentialsArg) { result in
           switch result {
-          case .success:
-            reply(wrapResult(nil))
+          case .success(let res):
+            reply(wrapResult(res))
           case .failure(let error):
             reply(wrapError(error))
           }
@@ -199,6 +225,22 @@ class HotspotApiSetup {
       }
     } else {
       stopHostChannel.setMessageHandler(nil)
+    }
+    /// Open the OS tethering/hotspot settings for the manual fallback path.
+    let openTetherSettingsChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.toice.HotspotApi.openTetherSettings\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      openTetherSettingsChannel.setMessageHandler { _, reply in
+        api.openTetherSettings { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      openTetherSettingsChannel.setMessageHandler(nil)
     }
     let joinAsClientChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.toice.HotspotApi.joinAsClient\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {
@@ -346,6 +388,66 @@ class BackgroundApiSetup {
       }
     } else {
       stopForegroundSessionChannel.setMessageHandler(nil)
+    }
+  }
+}
+/// Native -> Dart push channel for asynchronous hotspot state changes.
+/// The host API is request/response only; the OS may tear the AP down or a
+/// client link may drop out of band, so those arrive here.
+///
+/// Generated protocol from Pigeon that represents Flutter messages that can be called from Swift.
+protocol HotspotEventsProtocol {
+  /// The hosted AP stopped (OS shutdown, failure, or explicit stopHost).
+  func onHostStopped(reason reasonArg: String, completion: @escaping (Result<Void, PigeonError>) -> Void)
+  /// This device's client connection to the hotspot came up or went down.
+  func onClientStateChanged(connected connectedArg: Bool, completion: @escaping (Result<Void, PigeonError>) -> Void)
+}
+class HotspotEvents: HotspotEventsProtocol {
+  private let binaryMessenger: FlutterBinaryMessenger
+  private let messageChannelSuffix: String
+  init(binaryMessenger: FlutterBinaryMessenger, messageChannelSuffix: String = "") {
+    self.binaryMessenger = binaryMessenger
+    self.messageChannelSuffix = messageChannelSuffix.count > 0 ? ".\(messageChannelSuffix)" : ""
+  }
+  var codec: NativeBridgePigeonCodec {
+    return NativeBridgePigeonCodec.shared
+  }
+  /// The hosted AP stopped (OS shutdown, failure, or explicit stopHost).
+  func onHostStopped(reason reasonArg: String, completion: @escaping (Result<Void, PigeonError>) -> Void) {
+    let channelName: String = "dev.flutter.pigeon.toice.HotspotEvents.onHostStopped\(messageChannelSuffix)"
+    let channel = FlutterBasicMessageChannel(name: channelName, binaryMessenger: binaryMessenger, codec: codec)
+    channel.sendMessage([reasonArg] as [Any?]) { response in
+      guard let listResponse = response as? [Any?] else {
+        completion(.failure(createConnectionError(withChannelName: channelName)))
+        return
+      }
+      if listResponse.count > 1 {
+        let code: String = listResponse[0] as! String
+        let message: String? = nilOrValue(listResponse[1])
+        let details: String? = nilOrValue(listResponse[2])
+        completion(.failure(PigeonError(code: code, message: message, details: details)))
+      } else {
+        completion(.success(Void()))
+      }
+    }
+  }
+  /// This device's client connection to the hotspot came up or went down.
+  func onClientStateChanged(connected connectedArg: Bool, completion: @escaping (Result<Void, PigeonError>) -> Void) {
+    let channelName: String = "dev.flutter.pigeon.toice.HotspotEvents.onClientStateChanged\(messageChannelSuffix)"
+    let channel = FlutterBasicMessageChannel(name: channelName, binaryMessenger: binaryMessenger, codec: codec)
+    channel.sendMessage([connectedArg] as [Any?]) { response in
+      guard let listResponse = response as? [Any?] else {
+        completion(.failure(createConnectionError(withChannelName: channelName)))
+        return
+      }
+      if listResponse.count > 1 {
+        let code: String = listResponse[0] as! String
+        let message: String? = nilOrValue(listResponse[1])
+        let details: String? = nilOrValue(listResponse[2])
+        completion(.failure(PigeonError(code: code, message: message, details: details)))
+      } else {
+        completion(.success(Void()))
+      }
     }
   }
 }

@@ -41,15 +41,27 @@ class HotspotCredentials {
 /// (Android) onto a common ordinal.
 enum ThermalState { nominal, fair, serious, critical }
 
+/// How the host AP was brought up (ADR-002 addendum).
+///
+/// [programmatic]: app configured the SoftAp with the fixed credentials
+/// (Android 13+ reflection path). [manualRequired]: the app could not set
+/// credentials, so the user must configure the hotspot by hand in Settings.
+enum HostStartMode { programmatic, manualRequired }
+
 /// Hotspot host/join control (ADR-001, ADR-002). Android: custom
-/// SoftApConfiguration. iOS: NEHotspotConfiguration join (host not supported).
+/// SoftApConfiguration via reflection, else manual fallback. iOS cannot host,
+/// and joins via the system Camera WiFi-QR flow, not this API.
 @HostApi()
 abstract class HotspotApi {
   @async
-  void startHost(HotspotCredentials credentials);
+  HostStartMode startHost(HotspotCredentials credentials);
 
   @async
   void stopHost();
+
+  /// Open the OS tethering/hotspot settings for the manual fallback path.
+  @async
+  void openTetherSettings();
 
   @async
   void joinAsClient(HotspotCredentials credentials);
@@ -83,4 +95,16 @@ abstract class BackgroundApi {
 
   @async
   void stopForegroundSession();
+}
+
+/// Native -> Dart push channel for asynchronous hotspot state changes.
+/// The host API is request/response only; the OS may tear the AP down or a
+/// client link may drop out of band, so those arrive here.
+@FlutterApi()
+abstract class HotspotEvents {
+  /// The hosted AP stopped (OS shutdown, failure, or explicit stopHost).
+  void onHostStopped(String reason);
+
+  /// This device's client connection to the hotspot came up or went down.
+  void onClientStateChanged(bool connected);
 }

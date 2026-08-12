@@ -7,7 +7,8 @@ class MainActivity : FlutterActivity() {
   override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
     super.configureFlutterEngine(flutterEngine)
     val messenger = flutterEngine.dartExecutor.binaryMessenger
-    HotspotApi.setUp(messenger, HotspotHandler())
+    val events = HotspotEvents(messenger)
+    HotspotApi.setUp(messenger, HotspotHandler(applicationContext, events))
     SensorApi.setUp(messenger, SensorHandler())
     BackgroundApi.setUp(messenger, BackgroundHandler())
   }

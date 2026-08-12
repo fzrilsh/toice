@@ -35,6 +35,21 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
 
+  # Runtime permission requests (NEARBY_WIFI_DEVICES / location) before host or
+  # join (ADR-002). Pinned exact for reproducible builds.
+  permission_handler: 11.3.1
+
+  # QR rendering of the standard WiFi payload for iOS system-Camera join
+  # (ADR-002 addendum). Pinned exact. No scanner dep: Android joins by manual
+  # entry at Phase 0, in-app scan lands at Phase 4.
+  qr_flutter: 4.1.0
+
+  # WebRTC transport for the voice layer (ADR-004/006): wraps native libwebrtc,
+  # Opus + DTX, local-network ICE only (no STUN/TURN). Pinned exact. Real audio
+  # needs a physical device; session logic sits behind a transport boundary so
+  # it stays unit-testable without one (Phase 1).
+  flutter_webrtc: 1.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

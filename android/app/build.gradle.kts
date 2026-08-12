@@ -17,9 +17,11 @@ android {
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.fzrilsh.toice"
-        // minSdk 26: SoftApConfiguration with fixed credentials requires API 26+
-        // (ADR-002). NEARBY_WIFI_DEVICES (API 33+) is gated at runtime.
-        minSdk = 26
+        // minSdk 29: WifiNetworkSpecifier + requestNetwork is the single
+        // supported client-join path (addNetwork deprecated at 29). The
+        // programmatic host path (SoftApConfiguration reflection) needs API 33+
+        // and degrades to a manual fallback below that (ADR-002).
+        minSdk = 29
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

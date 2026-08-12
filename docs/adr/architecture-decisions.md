@@ -52,6 +52,12 @@ iOS requires explicit user consent to join a WiFi network the first time, and do
 - All devices must persist the group credentials locally for the session (cleared at trip end / explicit group teardown).
 - Anyone who captures the QR code (photo, screenshot) could join the hotspot for that session. Acceptable risk for MVP; flagged as a hardening item (rotating nonce validation, or app-layer authentication over the data channel) for later.
 
+**Addendum (Phase 0, 2026-08-11): platform reality vs the original decision.**
+
+- **Android host:** the public `WifiManager.startLocalOnlyHotspot(callback, handler)` always generates a random SSID/password, which breaks fixed credentials. The overload taking a `SoftApConfiguration` is a hidden `@SystemApi` requiring `NETWORK_SETTINGS` (system apps) or `NEARBY_WIFI_DEVICES` (API 33+). We reach it by reflection on API 33+ with `NEARBY_WIFI_DEVICES` granted. Any failure (missing hidden API, OEM block, `SecurityException`, older API) degrades to a manual fallback: the app shows the credentials and the QR, the user creates the hotspot by hand in Settings. `startHost` returns `HostStartMode.programmatic` or `manualRequired` to drive this. The fixed-credential goal is unchanged; only the mechanism now has two tiers.
+- **iOS join:** `NEHotspotConfiguration` is dropped. Its entitlement (`com.apple.developer.networking.HotspotConfiguration`) is gated behind the paid Apple Developer Program, and leaving it in the plist breaks free-provisioning signing. Instead the host renders a standard `WIFI:S:<ssid>;T:WPA;P:<password>;;` QR, which the native iOS Camera (iOS 11+) and Android Camera (9+) decode into the system join flow. The user taps Join once; the network is then a known network, so auto-rejoin across handoffs works exactly as this ADR intends. mDNS/Bonjour discovery of the host IP needs no entitlement (only raw multicast sockets do), so `NSLocalNetworkUsageDescription` + `NSBonjourServices` suffice.
+- If a paid account is later obtained, `NEHotspotConfiguration` can be added as a smoother in-app join path without changing the credential format or the QR.
+
 ---
 
 ## ADR-003: Dynamic host election and handoff
@@ -83,6 +89,13 @@ The hosting device changes over the course of a trip, both to spread battery/the
 - Prevents split-brain (two devices independently deciding to become host and running simultaneous APs).
 - Adds one extra round trip (intent + ack) to every voluntary handoff, trading a small latency cost for safety against dual-AP states.
 - Requires every device to continuously run the same election logic in the background, which must itself survive OS background suspension (see ADR-005).
+
+**Addendum (Phase 0, 2026-08-11): iOS cannot host, so it is excluded from election.**
+
+- "Any device should be eligible to host" holds only for Android. iOS gives third-party apps no way to bring up an access point (there is no public or entitlement-gated API for it, and none is expected). An iPhone can only ever be a client on this network.
+- Election therefore treats iOS devices as host-ineligible: they broadcast their RSSI vector and participate in scoring so an Android host stays central to them, but they are never selected as the handoff target.
+- Every group needs at least one Android device to host. An all-iPhone convoy cannot be served and is out of scope. This is surfaced at group creation (Phase 4), not silently.
+- Follows directly from the ADR-002 addendum: dropping `NEHotspotConfiguration` removes in-app join on iOS, and iOS never had an in-app host path to begin with.
 
 ---
 
