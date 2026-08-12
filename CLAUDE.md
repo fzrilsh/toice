@@ -92,10 +92,7 @@ Done:
 - **Phase 1 mock-track (code complete, device validation deferred to Phase 6).** WebRTC session state machine behind a transport boundary (`lib/audio/`), call screen bound to live connection state, driven by mock session/signaling. Real audio deferred.
 - **Phase 2 (code complete, pure Dart).** Election scoring + handoff FSM (ADR-003): broadcast payload model + score mappers, deterministic ranking (worst-case RSSI, iOS excluded), hysteresis gate, handoff state machine, election daemon over a mock channel + tick clock. All under `lib/election/`, unit tested.
 - **Phase 3 (code complete, pure Dart).** Audio priority + state management (ADR-004): loudest-speaker-wins ducking engine (hold-time hysteresis), speaker-level source boundary + active-speaker tracker, DTX/headset-conditional-AEC config model (`lib/audio/`), and `SessionStore` reactive state binding (`lib/app/`). Call screen renders the roster with a live speaking indicator. Decision layer only; real audio at Phase 6.
-
-Pure-Dart phases (no hardware, do these next):
-
-4. **Phase 4 - QR bootstrap + full UI (ADR-002).** QR encode/decode round-trip with the deferred nonce field, in-app QR scanner dep for Android (iOS stays system Camera), trip-lifetime credential persistence, real create/join/call/roster screens replacing the Phase 0 PoC.
+- **Phase 4 (code complete, pure Dart).** QR bootstrap + full UI (ADR-002): persisted `nonce` field + QR/JSON credential codec (`fromWifiQrPayload`), trip-lifetime credential persistence (`CredentialStore`, `shared_preferences`), `GroupController` trip lifecycle (create/join/restore/end), in-app QR scanner for Android join (`mobile_scanner`, iOS stays system Camera), and real create/join landing screens replacing the Phase 0 PoC (`lib/group/`, `lib/ui/`). Nonce is kept out of the QR (Option B) so the join code stays a strictly standard `WIFI:` string; call still runs the mock session (real audio at Phase 6).
 
 Hardware-gated phases (deferred until Android devices are back):
 
