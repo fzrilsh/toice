@@ -17,27 +17,32 @@ const _alphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
 const _groupIdLength = 8; // SSID "Toice-XXXXXXXX" = 14 bytes, well under 32.
 const _passwordLength = 16; // Valid WPA2 range is 8-63 chars.
-const _nonceLength = 6; // App-layer group secret, not in the QR (see below).
+const _tripPinLength = 6; // Numeric PIN the client types (or scans) to auth.
+
+/// Prefix on the optional PIN-only QR so a stray scan can't be mistaken for it.
+const _pinQrPrefix = 'TOICE-PIN:';
 
 /// Fixed group credentials plus the standard-format QR payload.
 ///
-/// The [nonce] (ADR-002) is generated and persisted but deliberately NOT put in
-/// the QR: the join QR stays a strictly standard `WIFI:` string so the iOS/
-/// Android system Camera parses it (ADR-002 addendum). App-layer auth using the
-/// nonce over the data channel is a later hardening phase; it rides in
-/// [toJson]/[fromJson] so it survives persistence, not in [toWifiQrPayload].
+/// The [tripPin] (ADR-002 nonce, refined to a short numeric PIN in Phase 4.5) is
+/// generated and persisted but deliberately NOT put in the WiFi QR: the join QR
+/// stays a strictly standard `WIFI:` string so the iOS/Android system Camera
+/// parses it (ADR-002 addendum). The host shows the PIN in large text and, on
+/// Android, as an optional [pinQrPayload] second QR; the client types or scans
+/// it. It is the shared secret for the app-layer HMAC handshake (Phase 4.5 auth)
+/// and rides in [toJson]/[fromJson], not in [toWifiQrPayload].
 class GroupCredentials {
   const GroupCredentials({
     required this.ssid,
     required this.password,
     required this.groupId,
-    required this.nonce,
+    required this.tripPin,
   });
 
   final String ssid;
   final String password;
   final String groupId;
-  final String nonce;
+  final String tripPin;
 
   /// Generate fresh credentials from a cryptographic RNG.
   factory GroupCredentials.generate([Random? rng]) {
@@ -47,7 +52,7 @@ class GroupCredentials {
       ssid: 'Toice-$groupId',
       password: _randomString(random, _passwordLength),
       groupId: groupId,
-      nonce: _randomString(random, _nonceLength),
+      tripPin: _randomDigits(random, _tripPinLength),
     );
   }
 
@@ -57,15 +62,33 @@ class GroupCredentials {
 
   /// Standard WiFi QR payload read natively by iOS 11+ / Android 9+ cameras
   /// (ADR-002 addendum). No escaping needed: [_alphabet] excludes the format's
-  /// reserved characters. The nonce is intentionally absent (Option B): a
+  /// reserved characters. The trip PIN is intentionally absent (Option B): a
   /// non-standard tag risks a silent parse failure in the system Camera.
   String toWifiQrPayload() => 'WIFI:S:$ssid;T:WPA;P:$password;;';
 
-  /// Parse a scanned standard `WIFI:` payload back into credentials. The nonce
-  /// is not carried in the QR, so a scanned join has an empty nonce until the
-  /// group's real nonce arrives over the data channel (later phase). [groupId]
-  /// is derived from the `Toice-` SSID prefix. Throws [FormatException] on a
-  /// malformed payload or a non-Toice SSID.
+  /// Optional PIN-only QR (Android in-app scan auto-fill). Not a WIFI: string,
+  /// so it never reaches the system Camera join path; the app scans it after
+  /// the network is already joined. iOS clients type the PIN by hand.
+  String pinQrPayload() => '$_pinQrPrefix$tripPin';
+
+  /// Read the trip PIN out of a [pinQrPayload] scan. Throws [FormatException] on
+  /// anything that isn't a well-formed Toice PIN QR.
+  static String pinFromQr(String payload) {
+    if (!payload.startsWith(_pinQrPrefix)) {
+      throw FormatException('not a Toice PIN QR', payload);
+    }
+    final pin = payload.substring(_pinQrPrefix.length);
+    if (pin.isEmpty || !RegExp(r'^\d{4,6}$').hasMatch(pin)) {
+      throw FormatException('not a 4-6 digit PIN', pin);
+    }
+    return pin;
+  }
+
+  /// Parse a scanned standard `WIFI:` payload back into credentials. The PIN is
+  /// not carried in the WiFi QR, so a scanned join has an empty [tripPin] until
+  /// the rider enters it on the PIN screen. [groupId] is derived from the
+  /// `Toice-` SSID prefix. Throws [FormatException] on a malformed payload or a
+  /// non-Toice SSID.
   factory GroupCredentials.fromWifiQrPayload(String payload) {
     final ssid = _wifiField(payload, 'S');
     final password = _wifiField(payload, 'P');
@@ -79,15 +102,23 @@ class GroupCredentials {
       ssid: ssid,
       password: password,
       groupId: ssid.substring('Toice-'.length),
-      nonce: '',
+      tripPin: '',
     );
   }
+
+  /// Copy with a filled-in [tripPin] (set once the rider enters it).
+  GroupCredentials withTripPin(String pin) => GroupCredentials(
+    ssid: ssid,
+    password: password,
+    groupId: groupId,
+    tripPin: pin,
+  );
 
   Map<String, dynamic> toJson() => {
     'ssid': ssid,
     'password': password,
     'groupId': groupId,
-    'nonce': nonce,
+    'tripPin': tripPin,
   };
 
   factory GroupCredentials.fromJson(Map<String, dynamic> json) =>
@@ -95,7 +126,7 @@ class GroupCredentials {
         ssid: json['ssid'] as String,
         password: json['password'] as String,
         groupId: json['groupId'] as String,
-        nonce: json['nonce'] as String,
+        tripPin: json['tripPin'] as String,
       );
 }
 
@@ -110,4 +141,8 @@ String _randomString(Random random, int length) => String.fromCharCodes(
     length,
     (_) => _alphabet.codeUnitAt(random.nextInt(_alphabet.length)),
   ),
+);
+
+String _randomDigits(Random random, int length) => String.fromCharCodes(
+  Iterable.generate(length, (_) => 0x30 + random.nextInt(10)),
 );

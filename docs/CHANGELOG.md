@@ -3,6 +3,71 @@
 All notable changes to Toice. See `docs/adr/architecture-decisions.md` for the
 architecture this implements and `CLAUDE.md` for the delivery phase plan.
 
+## Phase 4.5 - UX polish + app-layer Trip PIN auth (2026-08-15) ✅ (pure Dart)
+
+Closes the Option-B gap Phase 4 left open (the credential secret was persisted
+but never actually used to guard the session) and polishes the UI for real
+riding conditions. Pure Dart/Flutter, unit- and widget-tested; still on the
+mock voice session, so live audio remains Phase 6 and native hotspot remains
+device-gated at Phase 5.
+
+### Changed
+
+- **`nonce` renamed to Trip PIN everywhere**, including the JSON key
+  (`lib/group/group_credentials.dart`). Since this is an unreleased MVP there is
+  no migration or backward-compatibility shim. The PIN is now a 4-6 digit
+  numeric value a rider can read off a screen or type, not an opaque nonce.
+
+### Added
+
+- `lib/audio/auth.dart`: app-layer Trip PIN authentication over the signaling
+  channel. Host issues a fresh random challenge; client answers with
+  HMAC-SHA256(tripPin, challenge); host recomputes and admits only on a
+  constant-time match. The PIN never crosses the wire, and each `PinChallenge`
+  is single-use so a captured response cannot be replayed against a new
+  challenge. `authenticateClient` / `respondToChallenge` drive it over the
+  `Signaling` boundary.
+- `lib/audio/signaling.dart`: `ChallengeMessage` / `AuthResponseMessage` on the
+  sealed `SignalMessage`; `peer_link.dart` ignores a stray auth frame (the
+  handshake runs before the link exists).
+- `lib/audio/voice_session.dart`: `VoiceSession.host` takes an optional
+  `tripPin`; `addPeer` runs the handshake first and throws
+  `AuthFailedException` on a wrong PIN, so an unauthenticated peer never enters
+  the roster. Client `connectToHost` answers the challenge.
+- `lib/group/group_credentials.dart`: a PIN-only QR codec (`pinQrPayload` /
+  `pinFromQr`, `TOICE-PIN:` prefix) for optional Android auto-fill, and
+  `withTripPin` to fill a PIN onto WiFi-QR-derived credentials.
+- `lib/ui/pin_entry_screen.dart`: numeric PIN entry shown after the client joins
+  the WiFi. Android can scan the host's PIN-only QR to auto-fill; iOS types it
+  (platform branch injected for testability). `create_screen.dart` shows the PIN
+  large plus its QR; `home_screen.dart` routes join through PIN entry before the
+  call.
+- `lib/ui/theme.dart` + `lib/ui/app.dart`: high-contrast outdoor dark theme
+  (near-black asphalt, white text, hi-vis amber primary, hazard-red destructive
+  actions), oversized heavy type, 64px glove tap targets; dark by default.
+- `lib/ui/transitions.dart`: `toiceRoute`, a shared fade+slide page transition
+  that degrades to a plain fade under reduced motion. `home_screen.dart` empty
+  state; join failures and permission denials now surface as a SnackBar instead
+  of being swallowed.
+- `crypto` pinned exact (3.0.7), promoted from transitive.
+- Tests: HMAC determinism + challenge verify/reject/replay + handshake over
+  loopback signaling (auth, 6), Trip PIN session gating (voice session, +1), PIN
+  entry widget (3), theme (2), rename/PIN-codec updates across the group tests.
+  Full suite green (115).
+
+### Deviations from spec
+
+- **App-layer auth is HMAC over the PIN, not a full PAKE.** A 4-6 digit PIN is
+  low-entropy, so this resists passive capture and replay but not an active
+  on-LAN attacker brute-forcing offline. Flagged with a `ponytail:` note in
+  `auth.dart`; the upgrade path (SPAKE2/J-PAKE) keeps the same two-message
+  shape. Acceptable for the MVP threat model (a bystander who merely scanned the
+  WiFi QR should not be admitted to the call).
+- **Trip PIN stays out of the WiFi QR (Option B, unchanged from Phase 4).** The
+  join QR remains a strictly standard `WIFI:` string; the PIN is delivered
+  out-of-band (shown large on the host, optionally as a separate `TOICE-PIN:`
+  QR) and entered on the client.
+
 ## Phase 4 - QR bootstrap + full UI (2026-08-12) ✅ (pure Dart)
 
 The trip bootstrap (ADR-002) and the real screens that replace the Phase 0 PoC,

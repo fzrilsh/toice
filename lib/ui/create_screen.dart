@@ -71,6 +71,38 @@ class _CreateScreenState extends State<CreateScreen> implements HotspotEvents {
   void onClientStateChanged(bool connected) =>
       _append('event onClientStateChanged: $connected');
 
+  /// The Trip PIN, shown large (riders type it) plus a small PIN-only QR that
+  /// Android clients can scan to auto-fill it. The PIN is the app-layer secret
+  /// that gates the voice session (Phase 4.5); it is deliberately not in the
+  /// WiFi QR (Option B).
+  Widget _tripPinCard(BuildContext context, String pin) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          Text('Trip PIN', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 4),
+          const Text('Riders enter this after joining the WiFi.'),
+          const SizedBox(height: 8),
+          SelectableText(
+            pin,
+            style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+              letterSpacing: 8,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+          const SizedBox(height: 12),
+          QrImageView(data: widget.credentials.pinQrPayload(), size: 120),
+          const SizedBox(height: 4),
+          Text(
+            'Android riders can scan this to fill the PIN.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final creds = widget.credentials;
@@ -91,6 +123,8 @@ class _CreateScreenState extends State<CreateScreen> implements HotspotEvents {
             'Password: ${creds.password}',
             style: Theme.of(context).textTheme.headlineSmall,
           ),
+          const SizedBox(height: 20),
+          _tripPinCard(context, creds.tripPin),
           if (_manualRequired) ...[
             const SizedBox(height: 12),
             const Text(

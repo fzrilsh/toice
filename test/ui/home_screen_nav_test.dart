@@ -8,11 +8,14 @@ import 'package:toice/ui/home_screen.dart';
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  testWidgets('landing shows Create and Join actions', (tester) async {
+  testWidgets('landing shows the empty-state welcome and both actions', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(home: HomeScreen(controller: GroupController())),
     );
 
+    expect(find.text('Ride connected'), findsOneWidget);
     expect(find.text('Create group'), findsOneWidget);
     expect(find.text('Join group'), findsOneWidget);
   });
@@ -30,6 +33,13 @@ void main() {
     // CreateScreen renders with the generated fixed credentials.
     expect(find.text('Host group'), findsOneWidget);
     expect(find.textContaining('SSID: Toice-'), findsOneWidget);
+    expect(find.textContaining('Trip PIN'), findsOneWidget);
+    // Start call sits below the PIN card in the lazy ListView.
+    await tester.scrollUntilVisible(
+      find.text('Start call'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Start call'), findsOneWidget);
   });
 

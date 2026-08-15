@@ -8,18 +8,29 @@ library;
 
 import 'dart:async';
 
+import 'auth.dart';
 import 'peer_link.dart';
 import 'rtc_peer.dart';
 import 'signaling.dart';
 
 enum SessionRole { host, client }
 
-class VoiceSession {
-  VoiceSession._(this.role, this._newPeer);
+/// Thrown when a joining client fails the Trip PIN handshake (Phase 4.5). The
+/// peer is never linked, so it never reaches the roster.
+class AuthFailedException implements Exception {
+  const AuthFailedException(this.peerId);
+  final String peerId;
+  @override
+  String toString() => 'peer $peerId failed Trip PIN auth';
+}
 
-  /// Host: accepts multiple clients via [addPeer].
-  factory VoiceSession.host(RtcPeerFactory newPeer) =>
-      VoiceSession._(SessionRole.host, newPeer);
+class VoiceSession {
+  VoiceSession._(this.role, this._newPeer, {this.tripPin});
+
+  /// Host: accepts multiple clients via [addPeer]. When [tripPin] is set, each
+  /// joining client must pass the Trip PIN handshake before it is linked.
+  factory VoiceSession.host(RtcPeerFactory newPeer, {String? tripPin}) =>
+      VoiceSession._(SessionRole.host, newPeer, tripPin: tripPin);
 
   /// Client: connect to the host with [connectToHost]. A client links to
   /// exactly one host, so a second call throws.
@@ -28,6 +39,10 @@ class VoiceSession {
 
   final SessionRole role;
   final RtcPeerFactory _newPeer;
+
+  /// Shared secret for the app-layer client handshake (Phase 4.5); null skips
+  /// auth (a scanned join before the rider enters the PIN, or legacy tests).
+  final String? tripPin;
   final _links = <String, PeerLink>{};
   final _subs = <String, StreamSubscription<VoiceConnectionState>>{};
   final _changes =
@@ -51,9 +66,17 @@ class VoiceSession {
 
   /// Host: register a joining client. [signaling] is the channel to that one
   /// client; the host is the answerer (it waits for the client's offer).
+  ///
+  /// If [tripPin] is set, the client must pass the Trip PIN handshake first
+  /// (Phase 4.5); a client that fails is never linked and throws
+  /// [AuthFailedException], so an unauthenticated peer never enters the roster.
   Future<PeerLink> addPeer(String peerId, Signaling signaling) async {
     if (role != SessionRole.host) {
       throw StateError('addPeer is host-only');
+    }
+    final pin = tripPin;
+    if (pin != null && !await authenticateClient(signaling, pin)) {
+      throw AuthFailedException(peerId);
     }
     final link = _link(peerId, signaling, initiator: false);
     await link.connect();
@@ -61,12 +84,21 @@ class VoiceSession {
   }
 
   /// Client: connect to the host over [signaling]. The client is the offerer.
-  Future<PeerLink> connectToHost(String hostId, Signaling signaling) async {
+  /// When [tripPin] is given, answer the host's Trip PIN challenge first
+  /// (Phase 4.5) so the host admits this client.
+  Future<PeerLink> connectToHost(
+    String hostId,
+    Signaling signaling, {
+    String? tripPin,
+  }) async {
     if (role != SessionRole.client) {
       throw StateError('connectToHost is client-only');
     }
     if (_links.isNotEmpty) {
       throw StateError('a client links to exactly one host');
+    }
+    if (tripPin != null) {
+      await respondToChallenge(signaling, tripPin);
     }
     final link = _link(hostId, signaling, initiator: true);
     await link.connect();

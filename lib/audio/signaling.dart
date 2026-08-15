@@ -45,6 +45,19 @@ class CandidateMessage extends SignalMessage {
   final Ice ice;
 }
 
+/// Host -> client: a fresh random challenge for the Trip PIN handshake
+/// (Phase 4.5). The client must answer with HMAC(tripPin, challenge).
+class ChallengeMessage extends SignalMessage {
+  const ChallengeMessage(this.challenge);
+  final String challenge;
+}
+
+/// Client -> host: the HMAC answer to a [ChallengeMessage].
+class AuthResponseMessage extends SignalMessage {
+  const AuthResponseMessage(this.mac);
+  final String mac;
+}
+
 /// A bidirectional signaling channel between one peer and its counterpart.
 abstract class Signaling {
   /// Send a message to the other peer.

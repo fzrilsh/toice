@@ -60,14 +60,33 @@ void main() {
       }
     });
 
-    test('nonce is generated, varies, and is NOT in the QR (Option B)', () {
-      final a = GroupCredentials.generate();
-      final b = GroupCredentials.generate();
-      expect(a.nonce, isNotEmpty);
-      expect(a.nonce, isNot(b.nonce));
-      // The join QR must stay a strictly standard WIFI: string.
-      expect(a.toWifiQrPayload().contains(a.nonce), isFalse);
-    });
+    test(
+      'tripPin is a 4-6 digit number, varies, and is NOT in the WiFi QR',
+      () {
+        final a = GroupCredentials.generate();
+        final b = GroupCredentials.generate();
+        expect(a.tripPin, matches(RegExp(r'^\d{4,6}$')));
+        expect(a.tripPin, isNot(b.tripPin));
+        // The join QR must stay a strictly standard WIFI: string.
+        expect(a.toWifiQrPayload().contains(a.tripPin), isFalse);
+      },
+    );
+
+    test(
+      'pinQrPayload round-trips via pinFromQr, rejects junk and WiFi QR',
+      () {
+        final c = GroupCredentials.generate();
+        expect(GroupCredentials.pinFromQr(c.pinQrPayload()), c.tripPin);
+        expect(
+          () => GroupCredentials.pinFromQr(c.toWifiQrPayload()),
+          throwsFormatException,
+        );
+        expect(
+          () => GroupCredentials.pinFromQr('TOICE-PIN:abcd'),
+          throwsFormatException,
+        );
+      },
+    );
   });
 
   group('fromWifiQrPayload', () {
@@ -77,8 +96,8 @@ void main() {
       expect(scanned.ssid, c.ssid);
       expect(scanned.password, c.password);
       expect(scanned.groupId, c.groupId);
-      // Nonce is not in the QR; a scanned join starts with an empty nonce.
-      expect(scanned.nonce, isEmpty);
+      // PIN is not in the QR; a scanned join starts with an empty tripPin.
+      expect(scanned.tripPin, isEmpty);
     });
 
     test('rejects a non-Toice SSID', () {
@@ -98,13 +117,13 @@ void main() {
   });
 
   group('json round-trip', () {
-    test('toJson/fromJson preserves every field including the nonce', () {
+    test('toJson/fromJson preserves every field including the tripPin', () {
       final c = GroupCredentials.generate();
       final back = GroupCredentials.fromJson(c.toJson());
       expect(back.ssid, c.ssid);
       expect(back.password, c.password);
       expect(back.groupId, c.groupId);
-      expect(back.nonce, c.nonce);
+      expect(back.tripPin, c.tripPin);
     });
   });
 }

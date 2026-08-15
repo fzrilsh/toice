@@ -82,6 +82,10 @@ class PeerLink {
         await _peer.setRemoteDescription(sdp);
       case CandidateMessage(:final ice):
         await _peer.addIceCandidate(ice);
+      case ChallengeMessage() || AuthResponseMessage():
+        // Trip PIN handshake (Phase 4.5) runs before the link is created, over
+        // the same channel; ignore any stray auth frame here.
+        break;
     }
   }
 
