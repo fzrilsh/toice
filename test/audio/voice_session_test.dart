@@ -192,4 +192,32 @@ void main() {
       await session.close();
     });
   });
+
+  group('Trip PIN gating', () {
+    test('a client with the right PIN is linked, wrong PIN throws', () async {
+      // Right PIN: client responds correctly, host admits it. Both sides run
+      // concurrently (the client subscribes before the host sends its
+      // challenge, as it would over a real buffered socket).
+      final ok = VoiceSession.host(FakePeer.new, tripPin: '4321');
+      final (hostSig, clientSig) = LoopbackSignaling.pair();
+      final client = VoiceSession.client(FakePeer.new);
+      final joined = client.connectToHost('host', clientSig, tripPin: '4321');
+      final added = ok.addPeer('c1', hostSig);
+      await Future.wait([added, joined]);
+      expect(ok.peerCount, 1);
+      await ok.close();
+      await client.close();
+
+      // Wrong PIN: host never links the peer.
+      final bad = VoiceSession.host(FakePeer.new, tripPin: '4321');
+      final (hostSig2, clientSig2) = LoopbackSignaling.pair();
+      final badClient = VoiceSession.client(FakePeer.new);
+      unawaited(badClient.connectToHost('host', clientSig2, tripPin: '0000'));
+      final rejected = bad.addPeer('c1', hostSig2);
+      await expectLater(rejected, throwsA(isA<AuthFailedException>()));
+      expect(bad.peerCount, 0);
+      await bad.close();
+      await badClient.close();
+    });
+  });
 }

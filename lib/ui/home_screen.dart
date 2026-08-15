@@ -6,6 +6,7 @@ import 'package:toice/native_bridge/native_bridge.g.dart';
 import 'package:toice/group/permissions.dart';
 import 'package:toice/ui/call_screen.dart';
 import 'package:toice/ui/create_screen.dart';
+import 'package:toice/ui/pin_entry_screen.dart';
 import 'package:toice/ui/scan_screen.dart';
 import 'package:toice/ui/transitions.dart';
 
@@ -63,7 +64,6 @@ class _HomeScreenState extends State<HomeScreen> {
       context,
     ).push<GroupCredentials>(toiceRoute(ScanScreen()));
     if (creds == null || !mounted) return;
-    await _group.joinWith(creds);
     try {
       await _hotspot.joinAsClient(creds.toHotspotCredentials());
     } catch (_) {
@@ -75,6 +75,14 @@ class _HomeScreenState extends State<HomeScreen> {
         'Join Toice-${creds.groupId} from WiFi settings, then continue.',
       );
     }
+    if (!mounted) return;
+    // Client scanned only the WiFi QR (Option B); collect the Trip PIN before
+    // the call so the app-layer handshake can gate the session (Phase 4.5).
+    final pin = await Navigator.of(
+      context,
+    ).push<String>(toiceRoute(PinEntryScreen()));
+    if (pin == null || !mounted) return;
+    await _group.joinWith(creds.withTripPin(pin));
     if (!mounted) return;
     await Navigator.of(context).push(
       toiceRoute(

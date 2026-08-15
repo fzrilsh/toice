@@ -33,6 +33,13 @@ void main() {
     // CreateScreen renders with the generated fixed credentials.
     expect(find.text('Host group'), findsOneWidget);
     expect(find.textContaining('SSID: Toice-'), findsOneWidget);
+    expect(find.textContaining('Trip PIN'), findsOneWidget);
+    // Start call sits below the PIN card in the lazy ListView.
+    await tester.scrollUntilVisible(
+      find.text('Start call'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Start call'), findsOneWidget);
   });
 

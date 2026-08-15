@@ -58,6 +58,11 @@ dependencies:
   # Pinned exact.
   mobile_scanner: 7.4.0
 
+  # HMAC-SHA256 for the app-layer Trip PIN handshake (Phase 4.5): no stdlib
+  # equivalent, already in the tree transitively, promoted to a direct dep.
+  # Pinned exact.
+  crypto: 3.0.7
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
