@@ -17,17 +17,20 @@ void main() {
     expect(await store.load(), isNull);
   });
 
-  test('save then load round-trips every field including the nonce', () async {
-    final creds = GroupCredentials.generate();
-    await store.save(creds);
+  test(
+    'save then load round-trips every field including the tripPin',
+    () async {
+      final creds = GroupCredentials.generate();
+      await store.save(creds);
 
-    final back = await store.load();
-    expect(back, isNotNull);
-    expect(back!.ssid, creds.ssid);
-    expect(back.password, creds.password);
-    expect(back.groupId, creds.groupId);
-    expect(back.nonce, creds.nonce);
-  });
+      final back = await store.load();
+      expect(back, isNotNull);
+      expect(back!.ssid, creds.ssid);
+      expect(back.password, creds.password);
+      expect(back.groupId, creds.groupId);
+      expect(back.tripPin, creds.tripPin);
+    },
+  );
 
   test('save replaces the previous credentials', () async {
     final first = GroupCredentials.generate();

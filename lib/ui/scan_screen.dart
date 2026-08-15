@@ -86,7 +86,7 @@ class _AndroidScannerState extends State<_AndroidScanner> {
 }
 
 /// Manual SSID/password entry: the iOS in-app fallback and the Android
-/// no-scan path. Pops the entered [GroupCredentials] (nonce empty, same as a
+/// no-scan path. Pops the entered [GroupCredentials] (tripPin empty, same as a
 /// scanned join) or does nothing on invalid input.
 class _ManualEntry extends StatefulWidget {
   const _ManualEntry({required this.hint});
