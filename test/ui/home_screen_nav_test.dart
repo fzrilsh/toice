@@ -8,11 +8,14 @@ import 'package:toice/ui/home_screen.dart';
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  testWidgets('landing shows Create and Join actions', (tester) async {
+  testWidgets('landing shows the empty-state welcome and both actions', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(home: HomeScreen(controller: GroupController())),
     );
 
+    expect(find.text('Ride connected'), findsOneWidget);
     expect(find.text('Create group'), findsOneWidget);
     expect(find.text('Join group'), findsOneWidget);
   });

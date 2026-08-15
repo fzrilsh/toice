@@ -7,6 +7,7 @@ import 'package:toice/group/permissions.dart';
 import 'package:toice/ui/call_screen.dart';
 import 'package:toice/ui/create_screen.dart';
 import 'package:toice/ui/scan_screen.dart';
+import 'package:toice/ui/transitions.dart';
 
 /// Landing screen (ADR-002, Phase 4): create a group (host) or join one
 /// (client), replacing the Phase 0 PoC. A persisted trip auto-restores on
@@ -41,40 +42,56 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _create() async {
-    if (!await ensureHotspotPermissions()) return;
+    if (!await ensureHotspotPermissions()) {
+      _notify('WiFi permission is needed to host. Enable it in Settings.');
+      return;
+    }
     final creds = await _group.create();
     if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => CreateScreen(credentials: creds, hotspot: _hotspot),
-      ),
-    );
+    await Navigator.of(
+      context,
+    ).push(toiceRoute(CreateScreen(credentials: creds, hotspot: _hotspot)));
   }
 
   Future<void> _join() async {
-    if (!await ensureHotspotPermissions()) return;
+    if (!await ensureHotspotPermissions()) {
+      _notify('WiFi permission is needed to join. Enable it in Settings.');
+      return;
+    }
     if (!mounted) return;
     final creds = await Navigator.of(
       context,
-    ).push<GroupCredentials>(MaterialPageRoute(builder: (_) => ScanScreen()));
+    ).push<GroupCredentials>(toiceRoute(ScanScreen()));
     if (creds == null || !mounted) return;
     await _group.joinWith(creds);
     try {
       await _hotspot.joinAsClient(creds.toHotspotCredentials());
     } catch (_) {
       // Device-only bridge (or iOS, which joins via system Camera). The call
-      // screen still opens over the mock session.
+      // screen still opens over the mock session; surface it so a real join
+      // failure isn't silent.
+      _notify(
+        'Could not join the WiFi network automatically. '
+        'Join Toice-${creds.groupId} from WiFi settings, then continue.',
+      );
     }
     if (!mounted) return;
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => CallScreen(
+      toiceRoute(
+        CallScreen(
           session: mockClientSession(),
           newSignaling: mockSignaling,
           speakerSource: mockSpeakerSource(),
         ),
       ),
     );
+  }
+
+  void _notify(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -91,8 +108,9 @@ class _HomeScreenState extends State<HomeScreen> {
               animation: _group,
               builder: (context, _) => _group.hasActiveTrip
                   ? _activeTripBanner()
-                  : const SizedBox.shrink(),
+                  : _welcome(context),
             ),
+            const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: _create,
               icon: const Icon(Icons.add),
@@ -109,6 +127,31 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  /// Empty state: no active trip yet. Point the rider at the one next action
+  /// instead of showing a bare pair of buttons.
+  Widget _welcome(BuildContext context) => Column(
+    children: [
+      Icon(
+        Icons.motorcycle,
+        size: 72,
+        color: Theme.of(context).colorScheme.primary,
+      ),
+      const SizedBox(height: 16),
+      Text(
+        'Ride connected',
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.headlineLarge,
+      ),
+      const SizedBox(height: 8),
+      Text(
+        'Create a group to host the intercom, or join one from the '
+        'leader\'s QR code.',
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.bodyLarge,
+      ),
+    ],
+  );
 
   Widget _activeTripBanner() => Card(
     child: Padding(

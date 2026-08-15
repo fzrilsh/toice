@@ -143,7 +143,10 @@ class _ManualEntryState extends State<_ManualEntry> {
           ),
           if (_error != null) ...[
             const SizedBox(height: 8),
-            Text(_error!, style: const TextStyle(color: Colors.red)),
+            Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
           ],
           const SizedBox(height: 8),
           FilledButton(onPressed: _submit, child: const Text('Join')),
