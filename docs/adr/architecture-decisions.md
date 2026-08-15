@@ -58,6 +58,13 @@ iOS requires explicit user consent to join a WiFi network the first time, and do
 - **iOS join:** `NEHotspotConfiguration` is dropped. Its entitlement (`com.apple.developer.networking.HotspotConfiguration`) is gated behind the paid Apple Developer Program, and leaving it in the plist breaks free-provisioning signing. Instead the host renders a standard `WIFI:S:<ssid>;T:WPA;P:<password>;;` QR, which the native iOS Camera (iOS 11+) and Android Camera (9+) decode into the system join flow. The user taps Join once; the network is then a known network, so auto-rejoin across handoffs works exactly as this ADR intends. mDNS/Bonjour discovery of the host IP needs no entitlement (only raw multicast sockets do), so `NSLocalNetworkUsageDescription` + `NSBonjourServices` suffice.
 - If a paid account is later obtained, `NEHotspotConfiguration` can be added as a smoother in-app join path without changing the credential format or the QR.
 
+**Addendum (Phase 4.5, 2026-08-15): the QR nonce became an app-layer Trip PIN.**
+
+- The "app-layer authentication over the data channel" hardening item flagged above is now implemented. The credential's `nonce` is renamed to a 4-6 digit numeric **Trip PIN** (Dart field and JSON key; no migration, unreleased MVP).
+- **Option B holds:** the PIN stays out of the `WIFI:` join QR so it remains a strictly standard string the system Camera parses. The PIN is delivered out-of-band (shown large on the host, optionally as a separate `TOICE-PIN:` QR for Android auto-fill) and typed/scanned on the client.
+- Before a client is admitted to the voice session, the host runs an HMAC-SHA256 challenge/response over the signaling channel: fresh random challenge, `HMAC(tripPin, challenge)` answer, constant-time verify, single-use so replay fails. This means a bystander who merely captured the WiFi QR is on the LAN but is not admitted to the call.
+- **Limitation:** this is HMAC over a low-entropy PIN, not a PAKE. It resists passive capture and replay, not an active on-LAN attacker brute-forcing offline. Upgrade path is SPAKE2/J-PAKE with the same two-message shape (`ponytail` note in `lib/audio/auth.dart`).
+
 ---
 
 ## ADR-003: Dynamic host election and handoff
